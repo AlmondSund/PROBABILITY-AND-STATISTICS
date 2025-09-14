@@ -1,0 +1,59 @@
+---
+title: "analysis"
+author: "Martín Ramírez Espinosa y Sergio Alejandro González Osorio"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Análisis lanzamiento de moneda
+```{r}
+csv_path <- "dataset.csv"
+data <- read.csv(csv_path)
+```
+
+### Evolución de frecuencias
+```{r}
+library(ggplot2)
+
+# Crear un data frame para la evolución de frecuencias
+evolution_df <- data.frame(
+    Lanzamiento = 1:length(data$lanzamiento),
+    Caras = data$fr_cara,
+    Sellos = data$fr_sello
+)
+
+# Graficar la evolución de frecuencias
+ggplot(evolution_df, aes(x = Lanzamiento)) +
+    geom_line(aes(y = Caras, color = "Caras")) +
+    geom_line(aes(y = Sellos, color = "Sellos")) +
+    labs(
+        title = "Evolución de Frecuencias",
+        x = "Número de Lanzamiento",
+        y = "Frecuencia Relativa"
+    ) +
+    scale_color_manual(values = c("Caras" = "blue", "Sellos" = "red")) +
+    theme_minimal()
+```
+
+### Barplot de frecuencias
+```{r}
+# Crear un data frame para el barplot de frecuencias
+barplot_df <- data.frame(
+    Resultado = c("Caras", "Sellos"),
+    Frecuencia = c(tail(data$fr_cara, 1), tail(data$fr_sello, 1))
+)
+# Graficar el barplot de frecuencias
+ggplot(barplot_df, aes(x = Resultado, y = Frecuencia, fill = Resultado)) +
+    geom_bar(stat = "identity") +
+    labs(
+        title = "Frecuencia Relativa Final",
+        x = "Resultado",
+        y = "Frecuencia Relativa"
+    ) +
+    scale_fill_manual(values = c("Caras" = "blue", "Sellos" = "red")) +
+    theme_minimal()
+```
