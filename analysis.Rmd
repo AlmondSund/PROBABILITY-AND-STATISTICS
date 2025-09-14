@@ -1,0 +1,566 @@
+---
+title: "Análisis descriptivo del dataset"
+author: "Martín Ramírez Espinosa y Sergio Alejandro González Osorio"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cosmo
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Opciones globales de knitr
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center")
+# Mostrar NA como guiones en tablas
+options(knitr.kable.NA = "-")
+
+# Repos y dependencias obligatorias
+if (is.null(getOption("repos")) || identical(getOption("repos")["CRAN"], "@CRAN@")) {
+    options(repos = c(CRAN = "https://cloud.r-project.org"))
+}
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    install.packages("ggplot2", quiet = TRUE)
+}
+library(ggplot2)
+if (!requireNamespace("rlang", quietly = TRUE)) {
+    install.packages("rlang", quiet = TRUE)
+}
+if (getRversion() >= "2.15.1") utils::globalVariables(c("group", "value", "freq", "prop", "label"))
+
+# Tema global y ajustes de estilo para que todas las gráficas luzcan consistentes
+ggplot2::theme_set(ggplot2::theme_minimal(base_size = 13))
+ggplot2::theme_update(
+    plot.title = ggplot2::element_text(face = "bold"),
+    legend.position = "right",
+    axis.text.x = ggplot2::element_text(angle = 0, vjust = 0.9),
+    axis.text.y = ggplot2::element_text(angle = 0)
+)
+```
+
+## Objetivo y descripción del documento
+
+Este documento presenta un análisis descriptivo completo del dataset provisto. Se calculan y explican medidas de:
+
+-   Tendencia central (media, mediana, etc.) y promedios alternativos (geométrica, armónica, cuadrática).
+-   Dispersión (desviación media y mediana, varianza, desviación estándar, IQR).
+-   Forma (asimetría y curtosis).
+-   Comparaciones gráficas entre grupos para variables categóricas (género, fumador, bebedor).
+-   Relaciones entre variables numéricas mediante diagramas de dispersión con recta de regresión.
+
+## Carga y preparación de datos
+
+```{r carga-preparacion}
+csv_path <- "dataset.csv"
+
+data <- read.csv(csv_path, header = TRUE, stringsAsFactors = FALSE)
+
+# Convertir variables cualitativas nominales a factores
+data$genero <- as.factor(data$genero) # Género (M/F)
+data$fumador <- as.factor(data$fumador) # ¿Fumador? (Si/No)
+data$bebedor <- as.factor(data$bebedor) # ¿Bebedor? (Si/No)
+
+# Asegurar que variables numéricas estén como numéricas
+num_vars <- c("peso", "edad", "estatura", "calculo_diferencial", "calculo_integral", "dinero_dia")
+for (v in num_vars) {
+    data[[v]] <- suppressWarnings(as.numeric(data[[v]]))
+}
+
+# Variables categóricas a utilizar
+cat_vars <- c("genero", "fumador", "bebedor")
+
+# Vista rápida de la estructura y primeras filas
+str(data)
+head(data)
+```
+
+## Funciones auxiliares y definiciones estadísticas
+
+A continuación, definimos funciones reutilizables para calcular promedios clásicos, medidas de dispersión, asimetría y curtosis, así como utilitarios para graficación.
+
+```{r funciones-auxiliares}
+# Promedios para un vector numérico x_i (con resguardos para ceros/negativos)
+get_means <- function(x_i) {
+    # Subconjunto positivo para geométrica
+    x_pos <- x_i[x_i > 0]
+    # Subconjunto sin ceros para armónica
+    x_zero_free <- x_i[x_i != 0]
+
+    arithmetic_mean <- mean(x_i)
+    geometric_mean <- (prod(x_pos))^(1 / length(x_pos))
+    harmonic_mean <- length(x_zero_free) / sum(1 / x_zero_free)
+    quadratic_mean <- sqrt(mean(x_i^2))
+
+    list(
+        arithmetic = arithmetic_mean,
+        geometric  = geometric_mean,
+        harmonic   = harmonic_mean,
+        quadratic  = quadratic_mean
+    )
+}
+
+# Medidas de dispersión para un vector numérico x_i
+get_deviations <- function(x_i) {
+    mean_deviation <- mean(abs(x_i - mean(x_i)))
+    median_deviation <- median(abs(x_i - median(x_i)))
+    variance <- var(x_i)
+    std_deviation <- sd(x_i)
+
+    list(
+        mean_deviation   = mean_deviation,
+        median_deviation = median_deviation,
+        variance         = variance,
+        std_deviation    = std_deviation
+    )
+}
+
+# Asimetría muestral
+get_skewness <- function(x_i) {
+    return((1.0 / length(x_i)) * sum(((x_i - mean(x_i))^3)) / (sd(x_i)^3))
+}
+
+# Curtosis muestral
+get_kurtosis <- function(x_i) {
+    return((1.0 / length(x_i)) * sum(((x_i - mean(x_i))^4)) / (sd(x_i)^4))
+}
+
+# Resumen numérico con múltiples métricas para una variable
+summarize_numeric <- function(x_i) {
+    x_i <- x_i[!is.na(x_i)]
+    means <- get_means(x_i)
+    devs <- get_deviations(x_i)
+
+    c(
+        n               = length(x_i),
+        min             = min(x_i),
+        q1              = as.numeric(quantile(x_i, 0.25, names = FALSE)),
+        median          = median(x_i),
+        q3              = as.numeric(quantile(x_i, 0.75, names = FALSE)),
+        max             = max(x_i),
+        mean_arithmetic = means$arithmetic,
+        mean_geometric  = means$geometric,
+        mean_harmonic   = means$harmonic,
+        mean_quadratic  = means$quadratic,
+        sd              = devs$std_deviation,
+        var             = devs$variance,
+        iqr             = IQR(x_i),
+        skewness        = get_skewness(x_i),
+        kurtosis        = get_kurtosis(x_i)
+    )
+}
+
+# Paleta de colores por niveles para variables categóricas
+get_group_colors <- function(levels_vec, gvar) {
+    if (gvar == "genero") {
+        cmap <- c("F" = "#FFB6C1", "M" = "#87CEEB")
+    } else if (gvar == "bebedor") {
+        cmap <- c("No" = "#D3D3D3", "Si" = "#F0E68C")
+    } else if (gvar == "fumador") {
+        cmap <- c("No" = "#D3D3D3", "Si" = "#A9A9A9")
+    } else {
+        cmap <- setNames(rep("#CCCCCC", length(levels_vec)), levels_vec)
+    }
+    cols <- unname(ifelse(levels_vec %in% names(cmap), cmap[levels_vec], "#CCCCCC"))
+    cols
+}
+
+# Paleta característica por variable numérica (para sección 4.1)
+get_numeric_var_colors <- function(v) {
+    # Colores llamativos y legibles
+    switch(v,
+        "dinero_dia" = list(fill = "#2ECC71", line = "#1E8449", outlier = "#145A32"), # verde billete
+        "peso" = list(fill = "#4E79A7", line = "#2F4B7C", outlier = "#1B2A41"), # azul
+        "edad" = list(fill = "#F28E2B", line = "#B05A00", outlier = "#7A3D00"), # naranja
+        "estatura" = list(fill = "#B07AA1", line = "#7A4F78", outlier = "#5A3A5E"), # morado
+        "calculo_diferencial" = list(fill = "#76B7B2", line = "#4E8F8B", outlier = "#3A6A67"), # verde azulado
+        "calculo_integral" = list(fill = "#E15759", line = "#A23537", outlier = "#7A2527"), # rojo coral
+        list(fill = "#74ADD1", line = "#D73027", outlier = "#555555") # por defecto
+    )
+}
+
+# Utilidad para trazar dispersión + recta de regresión (ggplot2)
+plot_with_lm <- function(x, y, xlab, ylab, main) {
+    df <- data.frame(x = x, y = y)
+    df <- df[is.finite(df$x) & is.finite(df$y), , drop = FALSE]
+    ggplot2::ggplot(df, ggplot2::aes(x = x, y = y)) +
+        ggplot2::geom_point(ggplot2::aes(color = "Datos"), alpha = 0.85, size = 2.5) +
+        ggplot2::geom_smooth(ggplot2::aes(color = "Ajuste lineal"), method = "lm", formula = y ~ x, se = TRUE, linewidth = 1.1) +
+        ggplot2::scale_color_manual(values = c("Datos" = "#4575b4", "Ajuste lineal" = "#d73027"), name = NULL) +
+        ggplot2::labs(title = main, x = xlab, y = ylab) +
+        ggplot2::theme_minimal(base_size = 13)
+}
+
+# Graficador estético de histograma + densidad (ggplot2)
+hist_density_plot <- function(x, v) {
+    x <- x[!is.na(x)]
+    bins <- tryCatch(nclass.FD(x), error = function(e) 10)
+    bins <- max(5, ifelse(is.finite(bins), bins, 10))
+    df <- data.frame(x = x)
+    cols <- get_numeric_var_colors(v)
+    ggplot2::ggplot(df, ggplot2::aes(x)) +
+        ggplot2::geom_histogram(ggplot2::aes(y = ggplot2::after_stat(density), fill = "Histograma"),
+            bins = bins, color = "white", alpha = 0.85
+        ) +
+        ggplot2::geom_density(ggplot2::aes(color = "Densidad"), linewidth = 1.1, na.rm = TRUE) +
+        ggplot2::scale_fill_manual(values = c("Histograma" = cols$fill), name = NULL) +
+        ggplot2::scale_color_manual(values = c("Densidad" = cols$line), name = NULL) +
+        ggplot2::geom_rug(alpha = 0.25) +
+        ggplot2::labs(title = paste("Distribución de", v), x = v, y = "Densidad") +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(
+            plot.title = ggplot2::element_text(face = "bold"),
+            panel.grid.minor = ggplot2::element_blank()
+        )
+}
+
+# Boxplot univariado
+boxplot_single <- function(x, v) {
+    x <- x[!is.na(x)]
+    df <- data.frame(x = x)
+    cols <- get_numeric_var_colors(v)
+    ggplot2::ggplot(df, ggplot2::aes(x = "", y = x)) +
+        ggplot2::geom_boxplot(fill = cols$fill, outlier.colour = cols$outlier, width = 0.3) +
+        ggplot2::coord_flip() +
+        ggplot2::labs(title = paste("Boxplot de", v), x = NULL, y = v) +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(plot.title = ggplot2::element_text(face = "bold"))
+}
+
+# Boxplot por grupos
+boxplot_grouped <- function(values, groups, nv, gvar) {
+    df <- data.frame(value = values, group = droplevels(as.factor(groups)))
+    df <- df[!is.na(df$value) & !is.na(df$group), , drop = FALSE]
+    cols <- get_group_colors(levels(df$group), gvar)
+    names(cols) <- levels(df$group)
+    ggplot2::ggplot(df, ggplot2::aes(x = group, y = value, fill = group)) +
+        ggplot2::geom_boxplot(outlier.colour = "#555555", width = 0.6) +
+        ggplot2::scale_fill_manual(values = cols) +
+        ggplot2::coord_flip() +
+        ggplot2::labs(title = paste("Boxplot de", nv, "por", gvar), x = gvar, y = nv, fill = gvar) +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(plot.title = ggplot2::element_text(face = "bold"))
+}
+
+# Barras para variable categórica con etiquetas y leyenda
+cat_bar_plot <- function(vec, v) {
+    fac <- droplevels(as.factor(vec))
+    df <- as.data.frame(table(fac), stringsAsFactors = FALSE)
+    names(df) <- c("group", "freq")
+    df$group <- factor(df$group, levels = levels(fac))
+    cols <- get_group_colors(levels(fac), v)
+    names(cols) <- levels(fac)
+    ggplot2::ggplot(df, ggplot2::aes(x = group, y = freq, fill = group)) +
+        ggplot2::geom_col(width = 0.65, color = "white") +
+        ggplot2::geom_text(ggplot2::aes(label = freq), vjust = -0.25, size = 3.6) +
+        ggplot2::scale_fill_manual(values = cols, name = v) +
+        ggplot2::labs(title = paste("Frecuencias de", v), x = v, y = "Frecuencia") +
+        ggplot2::expand_limits(y = max(df$freq) * 1.15) +
+        ggplot2::theme_minimal(base_size = 13)
+}
+
+# Pie/Donut con porcentajes claros y leyenda
+cat_pie_plot <- function(vec, v) {
+    fac <- droplevels(as.factor(vec))
+    df <- as.data.frame(table(fac), stringsAsFactors = FALSE)
+    names(df) <- c("group", "freq")
+    df$group <- factor(df$group, levels = levels(fac))
+    df$prop <- df$freq / sum(df$freq)
+    df$label <- paste0(round(100 * df$prop), "%")
+    cols <- get_group_colors(levels(fac), v)
+    names(cols) <- levels(fac)
+    ggplot2::ggplot(df, ggplot2::aes(x = "", y = prop, fill = group)) +
+        ggplot2::geom_col(width = 1, color = "white") +
+        ggplot2::coord_polar(theta = "y") +
+        ggplot2::geom_text(ggplot2::aes(label = label), position = ggplot2::position_stack(vjust = 0.5), size = 3.7, color = "black") +
+        ggplot2::scale_fill_manual(values = cols, name = v) +
+        ggplot2::labs(title = paste("Proporciones de", v), x = NULL, y = NULL, fill = v) +
+        ggplot2::theme_minimal(base_size = 13) +
+        ggplot2::theme(
+            axis.title = ggplot2::element_blank(),
+            axis.text = ggplot2::element_blank(),
+            axis.ticks = ggplot2::element_blank(),
+            panel.grid = ggplot2::element_blank()
+        )
+}
+```
+
+## Análisis descriptivo de variables numéricas
+
+En esta sección presentamos estadísticas descriptivas para las variables numéricas y sus gráficas básicas (histograma con densidad y boxplot).
+
+```{r resumen-numerico}
+# Tabla de resumen por variable numérica
+numeric_summary <- lapply(num_vars, function(v) {
+    stats <- summarize_numeric(data[[v]])
+    df <- data.frame(variable = v, t(stats), row.names = NULL, check.names = FALSE)
+    # Redondeo para presentación (excluir 'n' para que quede entero)
+    num_cols <- setdiff(names(df), c("variable", "n"))
+    df[num_cols] <- lapply(df[num_cols], function(x) if (is.numeric(x)) round(x, 3) else x)
+    df
+})
+
+numeric_summary <- do.call(rbind, numeric_summary)
+# Asegurar 'n' como entero
+suppressWarnings(numeric_summary$n <- as.integer(numeric_summary$n))
+
+# 1) Medidas de posición
+posicion <- numeric_summary[, c("variable", "n", "min", "q1", "median", "q3", "max")]
+colnames(posicion) <- c("Variable", "n", "Mín", "Q1", "Mediana", "Q3", "Máx")
+knitr::kable(posicion, caption = "Medidas de posición por variable", align = c("l", rep("r", 6)))
+
+# 2) Promedios clásicos
+promedios <- numeric_summary[, c("variable", "mean_arithmetic", "mean_geometric", "mean_harmonic", "mean_quadratic")]
+colnames(promedios) <- c("Variable", "Media (aritm.)", "Media (geom.)", "Media (arm.)", "Media (cuad.)")
+knitr::kable(promedios, caption = "Promedios clásicos por variable", align = c("l", rep("r", 4)))
+
+# 3) Dispersión y forma
+disp_forma <- numeric_summary[, c("variable", "sd", "var", "iqr", "skewness", "kurtosis")]
+colnames(disp_forma) <- c("Variable", "DE", "Var", "RI", "Asimetría", "Curtosis")
+knitr::kable(disp_forma, caption = "Medidas de dispersión y forma por variable", align = c("l", rep("r", 5)))
+```
+
+### Interpretación de las medidas numéricas
+
+En esta sección se interpreta cada métrica anterior y se clasifica la forma de la distribución según la curtosis: platicúrtica (kurtosis < 2.5), mesocúrtica (≈ 3) o leptocúrtica (> 3). La asimetría se lee por el signo y la magnitud del coeficiente.
+
+```{r interpretacion-numerica, echo=FALSE}
+# Funciones de interpretación (no alteran la lógica anterior)
+interpret_kurtosis <- function(k) {
+    if (is.na(k)) {
+        return(NA_character_)
+    }
+    if (k < 2.5) {
+        "Platicúrtica (colas ligeras, más achatada)"
+    } else if (k > 3.5) {
+        "Leptocúrtica (colas pesadas, pico agudo)"
+    } else {
+        "Mesocúrtica (similar a la Normal)"
+    }
+}
+
+interpret_skewness <- function(s) {
+    if (is.na(s)) {
+        return(NA_character_)
+    }
+    if (s > 0.5) {
+        "Sesgo positivo (cola a la derecha)"
+    } else if (s < -0.5) {
+        "Sesgo negativo (cola a la izquierda)"
+    } else {
+        "Aproximadamente simétrica"
+    }
+}
+
+num_int <- numeric_summary
+num_int$`Interpretación asimetría` <- vapply(num_int$skewness, interpret_skewness, character(1))
+num_int$`Clasificación curtosis` <- vapply(num_int$kurtosis, interpret_kurtosis, character(1))
+
+cols <- c("variable", "n", "mean_arithmetic", "median", "sd", "iqr", "skewness", "Interpretación asimetría", "kurtosis", "Clasificación curtosis")
+num_int_print <- num_int[, cols]
+colnames(num_int_print) <- c("Variable", "n", "Media", "Mediana", "DE", "RI", "Asimetría", "Lectura asimetría", "Curtosis", "Lectura curtosis")
+knitr::kable(num_int_print, caption = "Lectura e interpretación de las medidas por variable", align = c("l", rep("r", 5), "r", "l", "r", "l"))
+```
+
+#### Comentarios por variable (qué esperar en las gráficas)
+
+La siguiente síntesis textual enlaza medidas con la lectura visual de histogramas y boxplots (presencia de sesgo, concentración/dispersion y atípicos por regla de Tukey).
+
+```{r comentarios-por-variable, echo=FALSE, results='asis'}
+for (v in num_vars) {
+    xi <- suppressWarnings(as.numeric(data[[v]]))
+    xi <- xi[is.finite(xi)]
+    if (length(xi) == 0) next
+    # Métricas desde la tabla ya calculada
+    row <- num_int[num_int$variable == v, , drop = FALSE]
+    m <- as.numeric(row$mean_arithmetic)
+    med <- as.numeric(row$median)
+    sdv <- as.numeric(row$sd)
+    iqr_ <- as.numeric(row$iqr)
+    skew <- as.numeric(row$skewness)
+    skew_desc <- row$`Interpretación asimetría`
+    kurt <- as.numeric(row$kurtosis)
+    kurt_desc <- row$`Clasificación curtosis`
+    # Atípicos por Tukey
+    q1 <- as.numeric(quantile(xi, 0.25, names = FALSE, na.rm = TRUE))
+    q3 <- as.numeric(quantile(xi, 0.75, names = FALSE, na.rm = TRUE))
+    iqr_local <- q3 - q1
+    low_b <- q1 - 1.5 * iqr_local
+    up_b <- q3 + 1.5 * iqr_local
+    n_out <- sum(xi < low_b | xi > up_b, na.rm = TRUE)
+    # Criterio simple de cercanía media-mediana
+    diff_mm <- abs(m - med)
+    close_mm <- if (is.finite(iqr_)) diff_mm <= 0.2 * iqr_ else diff_mm <= 0.2 * sdv
+
+    cat("\n\n##### ", v, "\n\n", sep = "")
+    cat("- Tendencia central: media = ", sprintf("%.3f", m), ", mediana = ", sprintf("%.3f", med),
+        if (close_mm) ". Son cercanas (distribución no muy sesgada)." else ". Se alejan (posible sesgo o atípicos).",
+        "\n",
+        sep = ""
+    )
+    cat("- Dispersión: DE = ", sprintf("%.3f", sdv), ", RI = ", sprintf("%.3f", iqr_),
+        ". Un RI más pequeño implica cajas compactas en el boxplot.\n",
+        sep = ""
+    )
+    cat("- Forma: asimetría = ", sprintf("%.3f", skew), " [", skew_desc, "]",
+        "; curtosis = ", sprintf("%.3f", kurt), " [", kurt_desc, "].\n",
+        sep = ""
+    )
+    cat("- Atípicos (regla 1.5·RI): ", n_out,
+        "; umbrales esperados [", sprintf("%.3f", low_b), ", ", sprintf("%.3f", up_b), "].\n",
+        sep = ""
+    )
+    cat("- Lectura visual esperada: el histograma+density debería reflejar ",
+        if (grepl("positivo", skew_desc)) "cola a la derecha" else if (grepl("negativo", skew_desc)) "cola a la izquierda" else "simetría aproximada",
+        ", y el boxplot puede mostrar ", if (n_out > 0) "puntos atípicos" else "pocos o ningún atípico",
+        ".\n",
+        sep = ""
+    )
+}
+```
+
+### Histogramas con densidad y Boxplots
+
+Para cada variable numérica se muestra un histograma con la densidad estimada superpuesta y su boxplot correspondiente.
+
+```{r graficas-numericas, fig.width=8, fig.height=5}
+for (v in num_vars) {
+    x_i <- data[[v]]
+    print(hist_density_plot(x_i, v))
+    print(boxplot_single(x_i, v))
+}
+```
+
+## Variables categóricas: frecuencias y proporciones
+
+Analizamos la distribución de cada variable categórica (`genero`, `fumador`, `bebedor`) mediante tablas de frecuencias y proporciones, además de gráficas de barras y de pastel.
+
+```{r categoricas, fig.width=8, fig.height=5}
+for (v in cat_vars) {
+    tab <- table(data[[v]])
+    prop <- prop.table(tab)
+
+    # Mostrar tablas legibles
+    print(knitr::kable(as.data.frame(tab),
+        col.names = c(v, "Frecuencia"),
+        caption = paste("Frecuencias de", v)
+    ))
+    print(knitr::kable(as.data.frame(round(prop, 3)),
+        col.names = c(v, "Proporción"),
+        caption = paste("Proporciones de", v)
+    ))
+
+    # Gráficas estéticas con ggplot2
+    print(cat_bar_plot(data[[v]], v))
+    print(cat_pie_plot(data[[v]], v))
+}
+```
+
+    ### Interpretación de variables categóricas
+
+    A continuación se resumen los niveles predominantes y el balance de cada variable categórica (si la distribución está muy concentrada en una categoría o más bien equilibrada).
+
+    ```{r interpretacion-categoricas, echo=FALSE}
+for (v in cat_vars) {
+    fac <- droplevels(as.factor(data[[v]]))
+    if (length(fac) == 0) next
+    tab <- sort(table(fac), decreasing = TRUE)
+    total <- sum(tab)
+    top_level <- names(tab)[1]
+    top_p <- as.numeric(tab[1]) / total
+    balance <- if (top_p > 0.6) {
+        "Distribución desbalanceada (una categoría domina)."
+    } else if (top_p < 0.4) {
+        "Distribución relativamente equilibrada."
+    } else {
+        "Distribución moderadamente balanceada."
+    }
+    cat("\n\n#### ", v, "\n", sep = "")
+    cat("- Categoría más frecuente: ", top_level, " (", sprintf("%.1f%%", 100 * top_p), ").\n", sep = "")
+    cat("- Lectura de barras/pastel: ", balance, "\n", sep = "")
+}
+    ```
+
+## Comparaciones entre grupos (boxplots)
+
+Para cada variable numérica, comparamos su distribución entre los niveles de cada variable categórica usando boxplots.
+
+```{r comparaciones-grupos, fig.width=9, fig.height=6}
+for (nv in num_vars) {
+    for (gvar in cat_vars) {
+        g_fac <- droplevels(as.factor(data[[gvar]]))
+        print(boxplot_grouped(values = data[[nv]], groups = g_fac, nv = nv, gvar = gvar))
+    }
+}
+```
+
+## Relaciones entre variables numéricas (dispersión + regresión)
+
+Mostramos cuatro relaciones de interés con su recta de regresión lineal ajustada (en rojo):
+
+-   Estatura vs Peso
+-   Dinero por día vs Edad
+-   Estatura vs Edad
+-   Peso vs Edad
+
+```{r relaciones, fig.width=8, fig.height=5}
+# a) Estatura vs Peso
+print(plot_with_lm(data$peso, data$estatura,
+    xlab = "peso", ylab = "estatura",
+    main = "Relación: Estatura vs Peso"
+))
+
+# b) Dinero por día vs Edad
+print(plot_with_lm(data$edad, data$dinero_dia,
+    xlab = "edad", ylab = "dinero_dia",
+    main = "Relación: Dinero por Día vs Edad"
+))
+
+# c) Estatura vs Edad
+print(plot_with_lm(data$edad, data$estatura,
+    xlab = "edad", ylab = "estatura",
+    main = "Relación: Estatura vs Edad"
+))
+
+# d) Peso vs Edad
+print(plot_with_lm(data$edad, data$peso,
+    xlab = "edad", ylab = "peso",
+    main = "Relación: Peso vs Edad"
+))
+```
+
+## Conclusiones
+
+En este apartado se sintetizan los principales hallazgos del análisis descriptivo. Se recomienda contrastar estas conclusiones con el contexto del estudio y los objetivos específicos.
+
+```{r conclusiones, echo=FALSE}
+# Síntesis automática basada en las métricas calculadas
+# 1) Variables numéricas: conteo de sesgos y clases de curtosis
+asim_pos <- sum(num_int$skewness > 0.5, na.rm = TRUE)
+asim_neg <- sum(num_int$skewness < -0.5, na.rm = TRUE)
+asim_aprox <- sum(num_int$skewness >= -0.5 & num_int$skewness <= 0.5, na.rm = TRUE)
+lepto <- sum(num_int$kurtosis > 3.5, na.rm = TRUE)
+meso <- sum(num_int$kurtosis >= 2.5 & num_int$kurtosis <= 3.5, na.rm = TRUE)
+plati <- sum(num_int$kurtosis < 2.5, na.rm = TRUE)
+
+cat("- Forma de las distribuciones (por variable numérica): ",
+    asim_aprox, " aprox. simétrica(s), ", asim_pos, " con sesgo positivo y ", asim_neg, " con sesgo negativo.\n",
+    sep = ""
+)
+cat("- Curtosis: ", lepto, " leptocúrtica(s), ", meso, " mesocúrtica(s) y ", plati, " platicúrtica(s).\n", sep = "")
+
+# 2) Categóricas: nivel más frecuente por variable
+for (v in cat_vars) {
+    fac <- droplevels(as.factor(data[[v]]))
+    if (length(fac) == 0) next
+    tab <- sort(table(fac), decreasing = TRUE)
+    total <- sum(tab)
+    top <- names(tab)[1]
+    tp <- round(100 * tab[1] / total, 1)
+    cat("- En ", v, ", destaca el nivel ", top, " (", tp, "%).\n", sep = "")
+}
+
+cat("\nNota: Estas conclusiones son indicativas y deben interpretarse junto con las gráficas incluidas en el documento.\n")
+```
+
