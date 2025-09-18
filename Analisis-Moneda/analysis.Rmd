@@ -2,7 +2,9 @@
 title: "analysis"
 author: "Martín Ramírez Espinosa y Sergio Alejandro González Osorio"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -15,45 +17,107 @@ csv_path <- "dataset.csv"
 data <- read.csv(csv_path)
 ```
 
-### Evolución de frecuencias
+### Simulaciones y Datos Reales
 ```{r}
 library(ggplot2)
 
-# Crear un data frame para la evolución de frecuencias
+# Realizar 15 simulaciones y compararlas con el resultado del dataset
+n_sim <- 15
+coin <- c("heads", "tails")
+
+get_samples <- function() {
+    sample(coin, size = length(data$lanzamiento), replace = TRUE)
+}
+
+sim_results <- replicate(n_sim,
+    {
+        sim_data <- get_samples()
+        heads_count <- cumsum(sim_data == "heads")
+        tails_count <- cumsum(sim_data == "tails")
+        n_throws <- seq_along(sim_data)
+        data.frame(
+            throws = n_throws,
+            heads = heads_count / n_throws,
+            tails = tails_count / n_throws
+        )
+    },
+    simplify = FALSE
+)
+
+# Crear un data frame para la evolución de frecuencias de los lanzamientos reales
 evolution_df <- data.frame(
-    Lanzamiento = 1:length(data$lanzamiento),
-    Caras = data$fr_cara,
-    Sellos = data$fr_sello
+    throws = seq_along(data$lanzamiento),
+    heads = data$fr_cara,
+    tails = data$fr_sello
 )
 
-# Graficar la evolución de frecuencias
-ggplot(evolution_df, aes(x = Lanzamiento)) +
-    geom_line(aes(y = Caras, color = "Caras")) +
-    geom_line(aes(y = Sellos, color = "Sellos")) +
+# Crear las capas de simulación
+sim_layers_heads <- lapply(seq_len(n_sim), function(i) {
+    geom_line(
+        data = sim_results[[i]],
+        aes(x = throws, y = heads),
+        color = "lightblue",
+        alpha = 0.5,
+        linewidth = 0.5
+    )
+})
+
+sim_layers_tails <- lapply(seq_len(n_sim), function(i) {
+    geom_line(
+        data = sim_results[[i]],
+        aes(x = throws, y = tails),
+        color = "lightcoral",
+        alpha = 0.5,
+        linewidth = 0.5
+    )
+})
+
+# Graficar las simulaciones junto con los datos reales
+ggplot() +
+    # Agregar las simulaciones primero para que queden en el fondo
+    sim_layers_heads +
+    sim_layers_tails +
+    # Línea de referencia teórica
+    geom_hline(
+        yintercept = 0.5,
+        color = "black",
+        linetype = "dashed",
+        linewidth = 1,
+    ) +
+    # Datos reales encima
+    geom_line(
+        data = evolution_df,
+        aes(x = throws, y = heads, color = "Caras Reales"),
+        linewidth = 1.2
+    ) +
+    geom_line(
+        data = evolution_df,
+        aes(x = throws, y = tails, color = "Sellos Reales"),
+        linewidth = 1.2
+    ) +
+    # Configuración de colores y leyenda
+    scale_color_manual(
+        name = "",
+        values = c("Caras Reales" = "#1f77b4", "Sellos Reales" = "#d62728")
+    ) +
+    # Etiquetas y tema
     labs(
-        title = "Evolución de Frecuencias",
+        title = "Evolución de Frecuencias Relativas: Simulaciones y Datos Reales",
         x = "Número de Lanzamiento",
-        y = "Frecuencia Relativa"
+        y = "Frecuencia Relativa",
     ) +
-    scale_color_manual(values = c("Caras" = "blue", "Sellos" = "red")) +
-    theme_minimal()
-```
-
-### Barplot de frecuencias
-```{r}
-# Crear un data frame para el barplot de frecuencias
-barplot_df <- data.frame(
-    Resultado = c("Caras", "Sellos"),
-    Frecuencia = c(tail(data$fr_cara, 1), tail(data$fr_sello, 1))
-)
-# Graficar el barplot de frecuencias
-ggplot(barplot_df, aes(x = Resultado, y = Frecuencia, fill = Resultado)) +
-    geom_bar(stat = "identity") +
-    labs(
-        title = "Frecuencia Relativa Final",
-        x = "Resultado",
-        y = "Frecuencia Relativa"
+    # Estilo visual del gráfico
+    theme_minimal(base_size = 12) +
+    theme(
+        plot.title = element_text(size = 14, face = "bold", hjust = 0.5, margin = margin(b = 10)),
+        plot.subtitle = element_text(size = 10, hjust = 0.5, color = "gray40", margin = margin(b = 15)),
+        plot.caption = element_text(size = 9, color = "gray50", hjust = 0),
+        legend.position = "bottom",
+        legend.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_line(color = "gray90", linewidth = 0.3),
+        panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
     ) +
-    scale_fill_manual(values = c("Caras" = "blue", "Sellos" = "red")) +
-    theme_minimal()
+    # Límites del eje Y
+    ylim(-0, 1)
 ```
