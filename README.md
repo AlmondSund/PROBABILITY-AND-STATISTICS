@@ -1,2 +1,3 @@
-# Probabilidad-Estadistica
-Asignatura probabilidad y estadística - 2025-2S - Martín Ramírez Espinosa
+# Probability and Statistics
+
+Course on probability and statistics – 2025‑2S – Martín Ramírez Espinosa
