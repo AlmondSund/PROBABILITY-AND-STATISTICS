@@ -1,0 +1,358 @@
+---
+title: "Discrete Probability Distributions"
+author: "Marti"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+theme_set(theme_minimal())
+```
+
+## Introducción
+
+Este cuaderno reúne la teoría y simulaciones prácticas de cuatro distribuciones discretas fundamentales: uniforme discreta, Bernoulli, binomial e hipergeométrica. Para cada distribución revisamos la función de masa de probabilidad (pmf), el valor esperado y la varianza, y luego ejecutamos dos o tres simulaciones breves que muestran cómo se comportan en la práctica las muestras aleatorias. Todas las simulaciones se basan en los generadores de números aleatorios de R base (`sample()`, `rbinom()` y `rhyper()`), y cada una incluye visualizaciones que comparan las frecuencias relativas simuladas con las probabilidades teóricas correspondientes.
+
+## Distribución uniforme discreta
+
+### Teoría
+
+La distribución uniforme discreta asigna la misma probabilidad a cada elemento de un conjunto finito. Si $X$ toma valores en ${a, a+1, \ldots, b}$ con $n = b - a + 1$ resultados posibles, entonces
+
+$$
+P(X = x) = \frac{1}{n}, \qquad x \in {a, \ldots, b}.
+$$
+
+Su esperanza y varianza son
+
+$$
+\mathbb{E}[X] = \frac{a + b}{2}, \qquad \operatorname{Var}(X) = \frac{n^2 - 1}{12}.
+$$
+
+Este modelo aplica cuando se selecciona un elemento de manera uniforme al azar, como al lanzar un dado o elegir un día al azar dentro de una línea de tiempo corta.
+
+### Ejemplo 1: lanzar un dado justo
+
+Generamos $10000$ muestras de un dado justo de seis caras y comparamos las frecuencias simuladas con la probabilidad teórica de $1/6$.
+
+```{r uniform-die-sim}
+n_rolls <- 10000
+die_rolls <- sample(1:6, size = n_rolls, replace = TRUE)
+die_distribution <- tibble(face = factor(die_rolls, levels = 1:6)) %>%
+  count(face) %>%
+  mutate(relative_freq = n / sum(n))
+
+die_distribution
+```
+
+La media y la varianza muestrales se aproximan a los valores teóricos.
+
+```{r uniform-die-summary}
+die_summary <- tibble(
+  sample_mean = mean(die_rolls),
+  sample_variance = var(die_rolls),
+  theoretical_mean = mean(1:6),
+  theoretical_variance = ((6 - 1 + 1)^2 - 1) / 12
+)
+die_summary
+```
+
+```{r uniform-die-plot, fig.height=3.5}
+ggplot(die_distribution, aes(x = face, y = relative_freq)) +
+  geom_col(fill = "#357ABD") +
+  geom_hline(yintercept = 1 / 6, linetype = "dashed", color = "firebrick", linewidth = 0.8) +
+  labs(
+    title = "Frecuencia relativa de resultados al lanzar un dado justo",
+    x = "Cara del dado",
+    y = "Frecuencia relativa"
+  )
+```
+
+### Ejemplo 2: Día de mantenimiento aleatorio
+
+Imagina programar un día de mantenimiento de manera uniforme entre los primeros 20 días de un mes. Generamos $5000$ días aleatorios y los comparamos con la probabilidad teórica de $1/20$.
+
+```{r uniform-maintenance-sim}
+n_days <- 5000
+maintenance_days <- sample(1:20, size = n_days, replace = TRUE)
+maintenance_distribution <- tibble(day = factor(maintenance_days, levels = 1:20)) %>%
+  count(day) %>%
+  mutate(relative_freq = n / sum(n))
+
+maintenance_distribution %>% slice_head(n = 6)
+```
+
+```{r uniform-maintenance-plot, fig.height=3.5}
+ggplot(maintenance_distribution, aes(day, relative_freq)) +
+  geom_col(fill = "#59A14F") +
+  geom_hline(yintercept = 1 / 20, linetype = "dashed", color = "firebrick", linewidth = 0.8) +
+  labs(
+    title = "Selección uniforme del día de mantenimiento (1–20)",
+    x = "Día del mes",
+    y = "Frecuencia relativa"
+  )
+```
+
+## Distribución de Bernoulli
+
+### Teoría
+
+La distribución de Bernoulli describe un único ensayo con dos posibles resultados: éxito (1) con probabilidad $p$ y fracaso (0) con probabilidad $1 - p$. Su pmf es
+
+$$
+P(X = x) = p^x (1 - p)^{1 - x}, \qquad x \in {0, 1}.
+$$
+
+La esperanza y la varianza son
+
+$$
+\mathbb{E}[X] = p, \qquad \operatorname{Var}(X) = p(1 - p).
+$$
+
+Cualquier decisión de sí/no con una probabilidad de éxito fija puede modelarse como Bernoulli.
+
+### Ejemplo 1: Prueba de aprobación/fallo de un componente
+
+Supongamos que un componente fabricado aprueba la inspección con probabilidad (p = 0.92). Simulamos (2000) pruebas para ver con qué frecuencia el componente aprueba.
+
+```{r bernoulli-component-sim}
+n_tests <- 2000
+pass_prob <- 0.92
+inspection_results <- rbinom(n = n_tests, size = 1, prob = pass_prob)
+component_summary <- tibble(
+  sample_mean = mean(inspection_results),
+  sample_variance = var(inspection_results),
+  theoretical_mean = pass_prob,
+  theoretical_variance = pass_prob * (1 - pass_prob)
+)
+component_summary
+```
+
+```{r bernoulli-component-plot, fig.height=3}
+inspection_distribution <- tibble(result = factor(inspection_results, levels = c(0, 1), labels = c("Fail", "Pass"))) %>%
+  count(result) %>%
+  mutate(relative_freq = n / sum(n))
+
+ggplot(inspection_distribution, aes(result, relative_freq)) +
+  geom_col(fill = "#F28E2B") +
+  labs(
+    title = "Resultados de Inspección para un Ensayo de Bernoulli",
+    x = "Resultado",
+    y = "Frecuencia relativa"
+  )
+```
+
+### Ejemplo 2: Probabilidad de clic en un anuncio
+
+Sea la probabilidad de que un usuario haga clic en un anuncio en línea (p = 0.15). Simulamos (5000) visitas.
+
+```{r bernoulli-ad-sim}
+n_visits <- 5000
+click_prob <- 0.15
+clicks <- rbinom(n = n_visits, size = 1, prob = click_prob)
+clicks_summary <- tibble(
+  sample_mean = mean(clicks),
+  theoretical_mean = click_prob
+)
+clicks_summary
+```
+
+```{r bernoulli-ad-plot, fig.height=3}
+click_distribution <- tibble(event = factor(clicks, levels = c(0, 1), labels = c("No Click", "Click"))) %>%
+  count(event) %>%
+  mutate(relative_freq = n / sum(n))
+
+ggplot(click_distribution, aes(event, relative_freq)) +
+  geom_col(fill = "#8CD17D") +
+  labs(
+    title = "Simulación de clics en un anuncio (Bernoulli)",
+    x = "Resultado",
+    y = "Frecuencia relativa"
+  )
+```
+
+## Distribución binomial
+
+### Teoría
+
+La distribución binomial cuenta el número de éxitos en $n$ ensayos de Bernoulli independientes, cada uno con probabilidad $p$ de éxito. Para $k = 0, 1, \ldots, n$, la pmf es
+
+$$
+P(X = k) = \binom{n}{k} p^k (1 - p)^{n - k}.
+$$
+
+La esperanza y la varianza se derivan directamente de la suma de variables de Bernoulli independientes:
+
+$$
+\mathbb{E}[X] = np, \qquad \operatorname{Var}(X) = np(1 - p).
+$$
+
+Aplicaciones típicas incluyen contar el número de artículos defectuosos en un lote cuando los defectos son raros e independientes, o contabilizar éxitos en juegos repetidos.
+
+### Ejemplo 1: tiros libres en baloncesto
+
+Un jugador realiza (n = 10) tiros libres con probabilidad de acierto (p = 0.75). Repetimos la serie de 10 tiros (5000) veces y comparamos los conteos empíricos con la pmf binomial teórica.
+
+```{r binomial-basketball-sim}
+n_series <- 5000
+n_shots <- 10
+success_prob <- 0.75
+made_shots <- rbinom(n = n_series, size = n_shots, prob = success_prob)
+
+basketball_distribution <- tibble(made = made_shots) %>%
+  count(made) %>%
+  mutate(relative_freq = n / sum(n),
+         theoretical = dbinom(made, size = n_shots, prob = success_prob))
+
+basketball_distribution %>% slice_head(n = 6)
+```
+
+```{r binomial-basketball-plot, fig.height=3.5}
+ggplot(basketball_distribution, aes(made, relative_freq)) +
+  geom_col(fill = "#B6992D") +
+  geom_point(aes(y = theoretical), color = "firebrick", size = 2) +
+  labs(
+    title = "Tiros libres encestados en 10 intentos",
+    x = "Número de éxitos",
+    y = "Frecuencia relativa"
+  )
+```
+
+### Ejemplo 2: conversiones en una campaña de correo
+
+Supongamos que enviamos 20 correos promocionales y cada uno tiene un 20% de probabilidad de convertir. Registramos el número de conversiones a lo largo de (8000) campañas simuladas.
+
+```{r binomial-email-sim}
+n_campaigns <- 8000
+n_emails <- 20
+conversion_prob <- 0.2
+conversions <- rbinom(n = n_campaigns, size = n_emails, prob = conversion_prob)
+
+campaign_distribution <- tibble(conversion_count = conversions) %>%
+  count(conversion_count) %>%
+  mutate(relative_freq = n / sum(n),
+         theoretical = dbinom(conversion_count, size = n_emails, prob = conversion_prob))
+
+campaign_distribution %>% slice_head(n = 6)
+```
+
+```{r binomial-email-plot, fig.height=3.5}
+ggplot(campaign_distribution, aes(conversion_count, relative_freq)) +
+  geom_col(fill = "#499894") +
+  geom_point(aes(y = theoretical), color = "firebrick", size = 2) +
+  labs(
+    title = "Conversiones en una campaña de 20 correos electrónicos",
+    x = "Número de conversiones",
+    y = "Frecuencia relativa"
+  )
+```
+
+### Ejemplo 3: detección de productos defectuosos
+
+Inspeccionamos lotes de 15 artículos donde cada artículo tiene una probabilidad de defecto del 5%. Tras (6000) inspecciones simuladas, comparamos la distribución de los conteos de defectos con la distribución binomial correspondiente.
+
+```{r binomial-defect-sim}
+n_batches <- 6000
+batch_size <- 15
+defect_prob <- 0.05
+defect_counts <- rbinom(n = n_batches, size = batch_size, prob = defect_prob)
+
+defect_distribution <- tibble(defects = defect_counts) %>%
+  count(defects) %>%
+  mutate(relative_freq = n / sum(n),
+         theoretical = dbinom(defects, size = batch_size, prob = defect_prob))
+
+defect_distribution %>% slice_head(n = 6)
+```
+
+```{r binomial-defect-plot, fig.height=3.5}
+ggplot(defect_distribution, aes(defects, relative_freq)) +
+  geom_col(fill = "#E15759") +
+  geom_point(aes(y = theoretical), color = "#1B9E77", size = 2) +
+  labs(
+    title = "Defectos en un lote de 15 artículos",
+    x = "Número de defectos",
+    y = "Frecuencia relativa"
+  )
+```
+
+## Distribución hipergeométrica
+
+### Teoría
+
+La distribución hipergeométrica mide el número de éxitos en $n$ extracciones de una población finita **sin reemplazo**. Si una población tiene $N$ elementos con $K$ éxitos y $N - K$ fracasos, y extraemos $n$ elementos, entonces para $k$ éxitos la pmf es
+
+$$
+P(X = k) = \frac{\binom{K}{k} \binom{N - K}{n - k}}{\binom{N}{n}}, \qquad \max(0,, n - (N - K)) \le k \le \min(n,, K).
+$$
+
+La esperanza y la varianza incorporan la corrección por población finita:
+
+$$
+\mathbb{E}[X] = n \frac{K}{N}, \qquad \operatorname{Var}(X) = n \frac{K}{N} \left(1 - \frac{K}{N}\right) \frac{N - n}{N - 1}.
+$$
+
+Esta distribución es adecuada cuando las selecciones se realizan sin reemplazo, como al sacar cartas de una baraja o muestrear unidades de un lote.
+
+### Ejemplo 1: sacar ases de una baraja
+
+Extraemos cinco cartas de una baraja estándar de 52 cartas. El número de ases en la muestra sigue una distribución hipergeométrica con (N = 52), (K = 4) y (n = 5).
+
+```{r hypergeo-aces-sim}
+n_samples <- 7000
+num_aces <- rhyper(nn = n_samples, m = 4, n = 52 - 4, k = 5)
+
+aces_distribution <- tibble(aces = num_aces) %>%
+  count(aces) %>%
+  mutate(relative_freq = n / sum(n),
+         theoretical = dhyper(aces, m = 4, n = 48, k = 5))
+
+aces_distribution
+```
+
+```{r hypergeo-aces-plot, fig.height=3.5}
+ggplot(aces_distribution, aes(aces, relative_freq)) +
+  geom_col(fill = "#76B7B2") +
+  geom_point(aes(y = theoretical), color = "firebrick", size = 2) +
+  labs(
+    title = "Ases extraídos en 5 cartas sin reemplazo",
+    x = "Número de ases",
+    y = "Frecuencia relativa"
+  )
+```
+
+### Ejemplo 2: muestreo de un lote sin reemplazo
+
+Un lote contiene (N = 40) artículos, de los cuales (K = 8) son defectuosos. Un inspector toma una muestra de (n = 10) artículos sin reemplazo y cuenta los defectos.
+
+```{r hypergeo-lot-sim}
+n_inspections <- 8000
+lot_defects <- rhyper(nn = n_inspections, m = 8, n = 32, k = 10)
+
+lot_distribution <- tibble(defects = lot_defects) %>%
+  count(defects) %>%
+  mutate(relative_freq = n / sum(n),
+         theoretical = dhyper(defects, m = 8, n = 32, k = 10))
+
+lot_distribution
+```
+
+```{r hypergeo-lot-plot, fig.height=3.5}
+ggplot(lot_distribution, aes(defects, relative_freq)) +
+  geom_col(fill = "#9C755F") +
+  geom_point(aes(y = theoretical), color = "firebrick", size = 2) +
+  labs(
+    title = "Defectos encontrados en una muestra sin reemplazo",
+    x = "Número de defectos en la muestra",
+    y = "Frecuencia relativa"
+  )
+```
+
+## Conclusiones
+
+En estos ejemplos, las frecuencias simuladas se alinean estrechamente con las pmf teóricas de cada distribución una vez que reunimos una muestra suficientemente grande. Las distribuciones uniforme y de Bernoulli tratan ensayos individuales, mientras que las distribuciones binomial e hipergeométrica se extienden al conteo de éxitos a lo largo de múltiples extracciones—con y sin reemplazo, respectivamente. Las simulaciones ilustran cómo la variación aleatoria se manifiesta en muestras finitas y proporcionan una verificación empírica de los modelos teóricos.
