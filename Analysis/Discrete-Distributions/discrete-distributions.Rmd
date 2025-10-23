@@ -3,6 +3,9 @@ title: "Discrete Probability Distributions"
 author: "Marti"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
+  pdf_document:
+    toc: true
+    toc_depth: '2'
   html_document:
     toc: true
     toc_depth: 2
